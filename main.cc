@@ -1,20 +1,22 @@
+#include <bits/stdc++.h>
+
+#include <bitset>
 #include <fstream>
 #include <iostream>
+#include <queue>
 #include <string>
 #include <unordered_map>
-#include <queue>
-#include <bits/stdc++.h>
 
 using namespace std;
 
-int getFileSize(ifstream &file) {
+int getFileSize(ifstream& file) {
     file.seekg(0, ios::end);
     int fileSize = file.tellg();
     file.seekg(0, ios::beg);
     return fileSize;
 }
 
-unordered_map<uint8_t, int> propogateByteFrequencies(ifstream &file) {
+unordered_map<uint8_t, int> propogateByteFrequencies(ifstream& file) {
     unordered_map<uint8_t, int> byteFrequencies;
     char byte;
     while (file.get(byte)) {
@@ -54,26 +56,41 @@ Node* buildTree(priority_queue<Node*, vector<Node*>, CompareNodes>& priorityQueu
     return priorityQueue.top();
 }
 
-void encode(Node* root, string code, map<char, string>& codes) {
-    if (root == nullptr) { return; }
+void encode(Node* root, pair<int, int> code, unordered_map<char, pair<int, int>>& codes) {
+    if (root == nullptr) {
+        return;
+    }
 
     if (root->byte != '\0') {
         codes[root->byte] = code;
     }
 
-    encode(root->left, code + "0", codes);
-    encode(root->right, code + "1", codes);
+    encode(root->left, make_pair(code.first << 1, code.second + 1), codes);
+    encode(root->right, make_pair((code.first << 1) | 1, code.second + 1), codes);
 }
 
+void encodeString(Node* root, string code, map<char, string>& codes) {
+    if (root == nullptr) {
+        return;
+    }
 
+    if (root->byte != '\0') {
+        codes[root->byte] = code;
+    }
+
+    encodeString(root->left, code + '0', codes);
+    encodeString(root->right, code + '1', codes);
+}
 
 int main() {
     ifstream inputFile;
-    string filename = "./data/text";
+    string filename = "./data/lorem";
 
     inputFile.open(filename, ios::binary);
 
-    if (!inputFile.is_open()) { return 1; }
+    if (!inputFile.is_open()) {
+        return 1;
+    }
 
     int fileSize = getFileSize(inputFile);
     unordered_map<uint8_t, int> byteFrequencies = propogateByteFrequencies(inputFile);
@@ -82,28 +99,88 @@ int main() {
 
     for (const auto& pair : byteFrequencies) {
         orderedFrequencies.push(new Node(pair.first, pair.second));
-        double symbolProbability = static_cast<double>(pair.second)/fileSize;
+        double symbolProbability = static_cast<double>(pair.second) / fileSize;
         entropy -= symbolProbability * log2(symbolProbability);
     }
-    
 
     Node* root = buildTree(orderedFrequencies);
 
-    map<char, string> codes;
-    encode(root, "", codes);
+    unordered_map<char, pair<int, int>> codes;
+    encode(root, make_pair(0, 0), codes);
 
+    map<char, string> stringCodes;
+    encodeString(root, "", stringCodes);
+
+    for (const auto& entry : codes) {
+        bitset<16> x(entry.second.first);
+        cout << static_cast<int>(entry.first) << ' ' << x << ' ' << entry.second.second << '\n';
+    }
+
+    cout << "Entropy: " << entropy << '\n';
+
+    inputFile.clear();
+    inputFile.seekg(0, ios::beg);
+    char byte;
+    unsigned char dataBuffer[64] = {0};
+
+    cout << "\n\n";
+    int byteCapacity = 8;
+    int dataBufferIndex = 0;
+    int limit = 0;
+    while (inputFile.get(byte)) {
+        if (limit == 10) {
+            break;
+        }
+        limit++;
+        int codeLength = codes[byte].second;
+        int code = codes[byte].first;
+        bitset<16> byteCode(code);
+        cout << "Writing String: " << stringCodes[byte] << " Writing Int: " << byteCode << " Length: " << codeLength << '\n';
+        while (codeLength != 0) {
+            if (byteCapacity - codeLength <= 0) {
+                dataBuffer[dataBufferIndex] |= code << (codeLength - byteCapacity) + 1;
+                bitset<8> dataBufferByte(dataBuffer[dataBufferIndex]);
+                cout << "Byte: " << dataBufferByte << '\n';
+                bitset<8> shiftedCode(code);
+                cout << "Shifted: " << shiftedCode << " Diff: " << (codeLength - byteCapacity) + 1 << '\n';
+                byteCapacity -= codeLength;
+                codeLength = 0;
+            } else {
+                dataBuffer[dataBufferIndex] |= code >> (codeLength - byteCapacity);
+                dataBufferIndex++;
+                codeLength -= byteCapacity;
+                byteCapacity = 8;
+                code &= ~((~0) << codeLength);
+                bitset<16> x(~((~0) << codeLength));
+                cout << "Here " << x << '\n';
+            }
+            // dataBufferIndex += (byteCapacity - codeLength == 0);
+            if (byteCapacity - codeLength == 0) {
+                dataBufferIndex++;
+                byteCapacity = 8;
+            }
+            for (int i = 0; i < 10; i++) {
+                bitset<8> x(dataBuffer[i]);
+                cout << x << ' ';
+            }
+            cout << "\n\n";
+        }
+    }
+
+    inputFile.close();
+    return 0;
+}
+
+/*
     double deflated = 0;
     for (const auto& pair : byteFrequencies) {
         char character = pair.first;
         int frequency = pair.second;
         string binary = codes[character];
         deflated += (8 - static_cast<double>(binary.length())) * frequency;
-        //cout << "'" << character << "': " << frequency << " - Code: " << binary << '\n';
+        cout << static_cast<int>(character) << ": " << frequency << " - Code: " << binary << '\n';
     }
-    
-    cout << "Entropy: " << entropy << "\nOriginal: " << fileSize << "bytes\nCompressed: " << deflated/8 << "bytes\n";
-    
-    /*
+
     const int numBytesToRead = 100;
     char buffer[numBytesToRead];
 
@@ -122,7 +199,3 @@ int main() {
         }
     }
     */
-
-    inputFile.close();
-    return 0;
-}
