@@ -1,5 +1,16 @@
-#include <bits/stdc++.h>
+/* TODO
 
+Write the compressed char array to a file
+Read in from a compressed file
+Define a way to specify the bit mapping at the beginning of the file
+Allow users to specify input and output files with command line arguments
+Allow users to flag on verbose mode to display entropy and compression stats
+Commandline help message
+Turn the huffman encoding into a class in a seperate file
+
+*/
+
+#include <bits/stdc++.h>
 #include <bitset>
 #include <fstream>
 #include <iostream>
@@ -113,7 +124,7 @@ int main() {
 
     for (const auto& entry : codes) {
         bitset<16> x(entry.second.first);
-        cout << static_cast<int>(entry.first) << ' ' << x << ' ' << entry.second.second << '\n';
+        cout << entry.first << ' ' << x << ' ' << entry.second.second << '\n';
     }
 
     cout << "Entropy: " << entropy << '\n';
@@ -128,42 +139,51 @@ int main() {
     int dataBufferIndex = 0;
     int limit = 0;
     while (inputFile.get(byte)) {
-        if (limit == 10) {
+        if (limit == 20) {
             break;
         }
         limit++;
         int codeLength = codes[byte].second;
         int code = codes[byte].first;
-        bitset<16> byteCode(code);
-        cout << "Writing String: " << stringCodes[byte] << " Writing Int: " << byteCode << " Length: " << codeLength << '\n';
+        cout << stringCodes[byte];
         while (codeLength != 0) {
-            if (byteCapacity - codeLength <= 0) {
-                dataBuffer[dataBufferIndex] |= code << (codeLength - byteCapacity) + 1;
-                bitset<8> dataBufferByte(dataBuffer[dataBufferIndex]);
-                cout << "Byte: " << dataBufferByte << '\n';
-                bitset<8> shiftedCode(code);
-                cout << "Shifted: " << shiftedCode << " Diff: " << (codeLength - byteCapacity) + 1 << '\n';
+            if (byteCapacity - codeLength >= 0) {
+                dataBuffer[dataBufferIndex] |= code << (byteCapacity - codeLength);
                 byteCapacity -= codeLength;
                 codeLength = 0;
             } else {
                 dataBuffer[dataBufferIndex] |= code >> (codeLength - byteCapacity);
-                dataBufferIndex++;
                 codeLength -= byteCapacity;
-                byteCapacity = 8;
                 code &= ~((~0) << codeLength);
-                bitset<16> x(~((~0) << codeLength));
-                cout << "Here " << x << '\n';
+                dataBufferIndex++;
+                byteCapacity = 8;
             }
-            // dataBufferIndex += (byteCapacity - codeLength == 0);
             if (byteCapacity - codeLength == 0) {
                 dataBufferIndex++;
                 byteCapacity = 8;
             }
-            for (int i = 0; i < 10; i++) {
-                bitset<8> x(dataBuffer[i]);
-                cout << x << ' ';
+
+        }
+    }
+
+    cout << '\n';
+    for (int i = 0; i < 10; i++) {
+        bitset<8> x(dataBuffer[i]);
+        cout << x;
+    }
+    cout << "\n\n";
+    Node* current = root;
+    for (const auto &entry : dataBuffer) {
+        for (int i = 7; i >= 0; i--) {
+            if ((entry & (1 << i)) != 0) {
+                current = current->right;
+            } else {
+                current = current->left;
             }
-            cout << "\n\n";
+            if (current->byte != '\0') {
+                cout << current->byte;
+                current = root;
+            }
         }
     }
 
