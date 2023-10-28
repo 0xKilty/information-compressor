@@ -1,7 +1,5 @@
 /* TODO
 
-Write the compressed char array to a file
-Read in from a compressed file
 Define a way to specify the bit mapping at the beginning of the file
 Allow users to specify input and output files with command line arguments
 Allow users to flag on verbose mode to display entropy and compression stats
@@ -93,9 +91,22 @@ void encodeString(Node* root, string code, map<char, string>& codes) {
     encodeString(root->right, code + '1', codes);
 }
 
+string traversal(Node* node) {
+    string tree;
+    if (node->byte == '\0') {
+        tree += traversal(node->left);
+        tree += '0';
+        tree += traversal(node->right);
+    } else {
+        tree += '1';
+        tree += node->byte;
+    }
+    return tree;
+}
+
 int main() {
-    ifstream inputFile;
     string filename = "./data/lorem";
+    ifstream inputFile;
 
     inputFile.open(filename, ios::binary);
 
@@ -106,8 +117,8 @@ int main() {
     int fileSize = getFileSize(inputFile);
     unordered_map<uint8_t, int> byteFrequencies = propogateByteFrequencies(inputFile);
     priority_queue<Node*, vector<Node*>, CompareNodes> orderedFrequencies;
-    double entropy = 0;
 
+    double entropy = 0;
     for (const auto& pair : byteFrequencies) {
         orderedFrequencies.push(new Node(pair.first, pair.second));
         double symbolProbability = static_cast<double>(pair.second) / fileSize;
@@ -115,6 +126,9 @@ int main() {
     }
 
     Node* root = buildTree(orderedFrequencies);
+
+    string tree = traversal(root);
+    cout << tree << '\n';
 
     unordered_map<char, pair<int, int>> codes;
     encode(root, make_pair(0, 0), codes);
@@ -124,7 +138,8 @@ int main() {
 
     for (const auto& entry : codes) {
         bitset<16> x(entry.second.first);
-        cout << entry.first << ' ' << x << ' ' << entry.second.second << '\n';
+        bitset<8> y(entry.first);
+        //cout << y << ' ' << x << ' ' << entry.second.second << '\n';
     }
 
     cout << "Entropy: " << entropy << '\n';
@@ -132,20 +147,18 @@ int main() {
     inputFile.clear();
     inputFile.seekg(0, ios::beg);
     char byte;
-    unsigned char dataBuffer[64] = {0};
+    const int dataBufferSize = 64;
+    unsigned char dataBuffer[dataBufferSize] = {0};
 
     cout << "\n\n";
+
+    // Compression
+    ofstream outputFile(filename + ".dat");
     int byteCapacity = 8;
     int dataBufferIndex = 0;
-    int limit = 0;
     while (inputFile.get(byte)) {
-        if (limit == 20) {
-            break;
-        }
-        limit++;
         int codeLength = codes[byte].second;
         int code = codes[byte].first;
-        cout << stringCodes[byte];
         while (codeLength != 0) {
             if (byteCapacity - codeLength >= 0) {
                 dataBuffer[dataBufferIndex] |= code << (byteCapacity - codeLength);
@@ -156,24 +169,31 @@ int main() {
                 codeLength -= byteCapacity;
                 code &= ~((~0) << codeLength);
                 dataBufferIndex++;
-                byteCapacity = 8;
+                if (dataBufferIndex == dataBufferSize) {
+                    outputFile.write(reinterpret_cast<char*>(dataBuffer), dataBufferSize);
+                    dataBufferIndex = 0;
+                    byteCapacity = 8;
+                    for (auto& entry : dataBuffer) { entry = 0; }
+                } else {
+                    byteCapacity = 8;
+                }
             }
-            if (byteCapacity - codeLength == 0) {
-                dataBufferIndex++;
-                byteCapacity = 8;
-            }
-
         }
     }
 
-    cout << '\n';
-    for (int i = 0; i < 10; i++) {
-        bitset<8> x(dataBuffer[i]);
-        cout << x;
-    }
-    cout << "\n\n";
+    // Write the rest of dataBuffer
+    outputFile.write(reinterpret_cast<char*>(dataBuffer), dataBufferIndex + 1);
+    inputFile.close();
+    outputFile.close();
+
+    // Decompression
+    inputFile.open(filename + ".dat");
+    outputFile.open(filename + "_decompressed");
     Node* current = root;
-    for (const auto &entry : dataBuffer) {
+    char entry;
+    unsigned char writeBuffer[dataBufferSize] = {0};
+    int writeBufferIndex = 0;
+    while (inputFile.get(entry)) {
         for (int i = 7; i >= 0; i--) {
             if ((entry & (1 << i)) != 0) {
                 current = current->right;
@@ -181,41 +201,17 @@ int main() {
                 current = current->left;
             }
             if (current->byte != '\0') {
-                cout << current->byte;
+                writeBuffer[writeBufferIndex] = current->byte;
+                writeBufferIndex++;
+                if (writeBufferIndex == dataBufferSize) {
+                    outputFile.write(reinterpret_cast<char*>(writeBuffer), dataBufferSize);
+                    writeBufferIndex = 0;
+                }
                 current = root;
             }
         }
     }
-
-    inputFile.close();
+    outputFile.write(reinterpret_cast<char*>(writeBuffer), writeBufferIndex);
+    cout << '\n';
     return 0;
 }
-
-/*
-    double deflated = 0;
-    for (const auto& pair : byteFrequencies) {
-        char character = pair.first;
-        int frequency = pair.second;
-        string binary = codes[character];
-        deflated += (8 - static_cast<double>(binary.length())) * frequency;
-        cout << static_cast<int>(character) << ": " << frequency << " - Code: " << binary << '\n';
-    }
-
-    const int numBytesToRead = 100;
-    char buffer[numBytesToRead];
-
-    while (!inputFile.eof()) {
-        inputFile.read(buffer, numBytesToRead);
-        if (inputFile) {
-            for (int i = 0; i < inputFile.gcount(); ++i) {
-                cout << static_cast<int>(buffer[i]) << "\n";
-            }
-        } else {
-            if (inputFile.eof()) {
-                cout << "End of file reached.\n";
-            } else if (inputFile.fail()) {
-                cerr << "Error reading from the file.\n";
-            }
-        }
-    }
-    */
