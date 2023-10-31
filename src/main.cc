@@ -38,6 +38,12 @@ unordered_map<uint8_t, int> propogateByteFrequencies(ifstream &file) {
     return byteFrequencies;
 }
 
+struct ByteNode {
+    uint8_t byte;
+    ByteNode *left;
+    ByteNode *right;
+};
+
 struct Node {
     uint8_t byte;
     int frequency;
@@ -169,6 +175,9 @@ int main(int argc, char* argv[]) {
                 return 1;
         }
     }
+
+    // Check if file exists
+    
     cout << file << '\n';
     if (compress) {
         cout << "Compressing " << file << '\n';
