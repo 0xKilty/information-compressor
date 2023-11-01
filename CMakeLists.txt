@@ -8,6 +8,10 @@ set(SOURCES
     src/main.cc
     src/bitarray.cc
     src/bitarray.h
+    src/encoding.cc
+    src/encoding.h
+    src/huffman.cc
+    src/huffman.h
 )
 
 # Specify the include directories

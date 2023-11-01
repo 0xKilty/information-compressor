@@ -9,7 +9,6 @@ Turn the huffman encoding into a class in a seperate file
 */
 
 #include <bits/stdc++.h>
-
 #include <bitset>
 #include <fstream>
 #include <iostream>
@@ -17,8 +16,11 @@ Turn the huffman encoding into a class in a seperate file
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <filesystem>
 
 #include "bitarray.h"
+#include "huffman.h"
+#include "encoding.h"
 
 using namespace std;
 
@@ -29,67 +31,7 @@ int getFileSize(ifstream &file) {
     return fileSize;
 }
 
-unordered_map<uint8_t, int> propogateByteFrequencies(ifstream &file) {
-    unordered_map<uint8_t, int> byteFrequencies;
-    char byte;
-    while (file.get(byte)) {
-        byteFrequencies[static_cast<uint8_t>(byte)]++;
-    }
-    return byteFrequencies;
-}
-
-struct ByteNode {
-    uint8_t byte;
-    ByteNode *left;
-    ByteNode *right;
-};
-
-struct Node {
-    uint8_t byte;
-    int frequency;
-    Node *left;
-    Node *right;
-
-    Node(uint8_t byte, int frequency)
-        : byte(byte), frequency(frequency), left(nullptr), right(nullptr) {}
-};
-
-struct CompareNodes {
-    bool operator()(Node *left, Node *right) {
-        return left->frequency > right->frequency;
-    }
-};
-
-Node *buildHuffmanTree(
-    priority_queue<Node*, vector<Node*>, CompareNodes> &priorityQueue) {
-    while (priorityQueue.size() > 1) {
-        Node *left = priorityQueue.top();
-        priorityQueue.pop();
-        Node *right = priorityQueue.top();
-        priorityQueue.pop();
-        Node *newNode = new Node('\0', left->frequency + right->frequency);
-        newNode->left = left;
-        newNode->right = right;
-
-        priorityQueue.push(newNode);
-    }
-    return priorityQueue.top();
-}
-
-void encode(Node *root, pair<int, int> code,
-            unordered_map<char, pair<int, int>> &codes) {
-    if (root == nullptr) {
-        return;
-    }
-    if (root->byte != '\0') {
-        codes[root->byte] = code;
-    }
-    encode(root->left, make_pair(code.first << 1, code.second + 1), codes);
-    encode(root->right, make_pair((code.first << 1) | 1, code.second + 1),
-           codes);
-}
-
-string postTreeTraversalTable(Node *node) {
+string postTreeTraversalTable(ByteNode *node) {
     string tree;
     if (node->byte == '\0') {
         tree += postTreeTraversalTable(node->left);
@@ -102,65 +44,18 @@ string postTreeTraversalTable(Node *node) {
     return tree;
 }
 
-void writePostOrderTable(BitArray &bitArray, Node *node) {
-    int bits = 0;
-    int length = 1;
-    if (node->byte == '\0') {
-        writePostOrderTable(bitArray, node->left);
-        writePostOrderTable(bitArray, node->right);
-    } else {
-        bits = (node->byte | (1 << 8));
-        length = 9;
-    }
-    bitArray.writeBits(bits, length);
-}
-
-Node* createHuffmanTree(BitArray &bitArray) {
-    stack<Node *> stack;
-    char byte;
-    int bitsToWrite = 0;
-    for (int i = 0; i < bitArray.index + 1; i++) {
-        for (int j = 7; j >= 0; j--) {
-            if (bitsToWrite == 0) {
-                if ((bitArray.buffer[i] & (1 << j)) != 0) {
-                    bitsToWrite = 8;
-                    if (j != 0) {
-                        byte |= ((bitArray.buffer[i] & (~((~0) << j))) << (8 - j));
-                        bitsToWrite -= j;
-                    }
-                    break;
-                } else {
-                    if (stack.size() == 1) {
-                        return stack.top();
-                    } else {
-                        Node *right = stack.top();
-                        stack.pop();
-                        Node *left = stack.top();
-                        stack.pop();
-                        Node *newNode = new Node('\0', 0);
-                        newNode->left = left;
-                        newNode->right = right;
-                        stack.push(newNode);
-                    }
-                }
-            } else {
-                byte |= ((bitArray.buffer[i] & ((~0) << (8 - bitsToWrite))) >> (8 - bitsToWrite));
-                j -= (bitsToWrite - 1);
-                Node *newNode = new Node(byte, 0);
-                stack.push(newNode);
-                byte = 0;
-                bitsToWrite = 0;
-            }
-        }
-    }
-    return nullptr;
+int usage(char filename[]) {
+    cerr << filename << " Usage: \n-c <file> (file to compress)\n-d <file> (file to decompress)\n-o <output file>\n";
+    return 1;
 }
 
 int main(int argc, char* argv[]) {
     int option;
     bool compress;
     string file;
-    while ((option = getopt(argc, argv, "c:d:")) != -1) {
+    string outFile;
+    if (argc == 1) { return usage(argv[0]); }
+    while ((option = getopt(argc, argv, "c:d:o:")) != -1) {
         switch (option) {
             case 'c':
                 compress = true;
@@ -170,113 +65,113 @@ int main(int argc, char* argv[]) {
                 compress = false;
                 file = optarg;
                 break;
+            case 'o':
+                outFile = optarg;
+                break;
             default:
-                cerr << "Usage: " << argv[0] << " -f -v value\n";
-                return 1;
+                return usage(argv[0]);
         }
     }
 
-    // Check if file exists
-    
-    cout << file << '\n';
-    if (compress) {
-        cout << "Compressing " << file << '\n';
-    } else {
-        cout << "Decompressing " << file << '\n';
-    }
-
-    string filename = "./data/lorem";
-    ifstream inputFile(filename, ios::binary);
-
-    if (!inputFile.is_open()) {
+    if (!filesystem::exists(file)) {
+        cerr << argv[0] << ": Error - " << file << " does not exist";
         return 1;
     }
 
-    int fileSize = getFileSize(inputFile);
-    unordered_map<uint8_t, int> byteFrequencies = propogateByteFrequencies(inputFile);
-    priority_queue<Node *, vector<Node *>, CompareNodes> orderedFrequencies;
-
-    double entropy = 0;
-    for (const auto &pair : byteFrequencies) {
-        orderedFrequencies.push(new Node(pair.first, pair.second));
-        double symbolProbability = static_cast<double>(pair.second) / fileSize;
-        entropy -= symbolProbability * log2(symbolProbability);
+    if (outFile == "") {
+        outFile = file + ".dat";
+        cout << "Output file: " << outFile << '\n';
     }
 
-    Node *root = buildHuffmanTree(orderedFrequencies);
-
-    string tree = postTreeTraversalTable(root);
-    cout << tree << '\n';
-
-    BitArray table;
-    writePostOrderTable(table, root);
-
-    Node *it = createHuffmanTree(table);
-
-    unordered_map<char, pair<int, int>> itcodes;
-    encode(root, make_pair(0, 0), itcodes);
-
-    unordered_map<char, pair<int, int>> codes;
-    encode(root, make_pair(0, 0), codes);
-
-    for (const auto &entry : codes) {
-        bitset<16> x(entry.second.first);
-        bitset<16> y(itcodes[entry.first].first);
-        //cout << y << ' ' << x << ' ' << entry.first << '\n';
+    ifstream inputFile(file, ios::binary);
+    if (!inputFile.is_open()) {
+        cerr << argv[0] << " Error - could not open " << file;
+        return 1;
     }
 
-    cout << "\nEntropy: " << entropy << '\n';
-
-    inputFile.clear();
-    inputFile.seekg(0, ios::beg);
-    char byte;
-
-    // Compression
-    ofstream outputFile(filename + ".dat");
+    ofstream outputFile(outFile);
     BitArray bitArray;
-    while (inputFile.get(byte)) {
-        int codeLength = codes[byte].second;
-        int code = codes[byte].first;
-        while (bitArray.writeBits(code, codeLength) != 0) {
-            bitArray.writeOut(outputFile);
-            bitArray.clear();
+    ByteNode* root;
+
+    if (compress) {
+        cout << "Compressing " << file << '\n';
+
+        int fileSize = getFileSize(inputFile);
+        unordered_map<char, int> byteFrequencies = propogateByteFrequencies(inputFile);
+        priority_queue<std::pair<ByteNode*, int>, vector<std::pair<ByteNode*, int>>, CompareByteNodes> orderedFrequencies;
+
+        double entropy = 0;
+        for (const auto &pair : byteFrequencies) {
+            std::pair<ByteNode*, int> byteFreq = make_pair(new ByteNode(pair.first), pair.second);
+            orderedFrequencies.push(byteFreq);
+            double symbolProbability = static_cast<double>(pair.second) / fileSize;
+            entropy -= symbolProbability * log2(symbolProbability);
         }
+        cout << "Entropy: " << entropy << '\n';
+
+        root = buildHuffmanTree(orderedFrequencies);
+
+        unordered_map<char, pair<int, int>> codes;
+        encode(root, make_pair(0, 0), codes);
+        writePostOrderTable(bitArray, root);
+
+        inputFile.clear();
+        inputFile.seekg(0, ios::beg);
+        char byte;
+
+        while (inputFile.get(byte)) {
+            int codeLength = codes[byte].second;
+            int code = codes[byte].first;
+            while (bitArray.writeBits(code, codeLength) != 0) {
+                bitArray.writeOut(outputFile);
+                bitArray.clear();
+            }
+        }
+
+        // Write the rest of bitArray
+        bitArray.index++;
+        bitArray.writeOut(outputFile);
+        // bitArray.clear();        
+    } else {
+        cout << "Decompressing " << file << '\n';
+
+        cout << inputFile.tellg() << '\n';
+
+        root = createHuffmanTree(inputFile);
+
+        char byte;
+        inputFile.get(byte);
+        bitset<8> x(byte);
+
+        cout << x << '\n';
+
+        cout << inputFile.tellg() << '\n';
+
+        ByteNode *current = root;
+        char entry;
+        while (inputFile.get(entry)) {
+            for (int i = 7; i >= 0; i--) {
+                if ((entry & (1 << i)) != 0) {
+                    current = current->right;
+                } else {
+                    current = current->left;
+                }
+                if (current->byte != '\0') {
+                    if (bitArray.writeByte(current->byte)) {
+                        bitArray.writeOut(outputFile);
+                        bitArray.clear();
+                    }
+                    current = root;
+                }
+            }
+        }
+
+        // Write the rest of writeBits
+        bitArray.writeOut(outputFile);
     }
 
-    // Write the rest of bitArray
-    bitArray.index++;
-    bitArray.writeOut(outputFile);
-    bitArray.clear();
-
-    // Reset
     inputFile.close();
     outputFile.close();
-
-    // Decompression
-    inputFile.open(filename + ".dat");
-    outputFile.open(filename + "_decompressed");
-    Node *current = it;
-    char entry;
-    while (inputFile.get(entry)) {
-        for (int i = 7; i >= 0; i--) {
-            if ((entry & (1 << i)) != 0) {
-                current = current->right;
-            } else {
-                current = current->left;
-            }
-            if (current->byte != '\0') {
-                if (bitArray.writeByte(current->byte)) {
-                    bitArray.writeOut(outputFile);
-                    bitArray.clear();
-                }
-                current = it;
-            }
-        }
-    }
-
-    // Write the rest of writeBits
-    bitArray.writeOut(outputFile);
-
-    cout << '\n';
+    
     return 0;
 }
