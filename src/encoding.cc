@@ -22,7 +22,7 @@ void writePostOrderTable(BitArray &bitArray, ByteNode *node) {
     bitArray.writeBits(bits, length);
 }
 
-ByteNode* createHuffmanTree(std::ifstream &file) {
+std::pair<ByteNode*, int> createHuffmanTree(std::ifstream &file) {
     std::stack<ByteNode*> stack;
     char readByte;
     char writeByte;
@@ -39,7 +39,7 @@ ByteNode* createHuffmanTree(std::ifstream &file) {
                     break;
                 } else {
                     if (stack.size() == 1) {
-                        return stack.top();
+                        return std::make_pair(stack.top(), j);
                     } else {
                         ByteNode *right = stack.top();
                         stack.pop();
@@ -52,7 +52,7 @@ ByteNode* createHuffmanTree(std::ifstream &file) {
                     }
                 }
             } else {
-                writeByte |= ((readByte & ((~0) << (8 - bitsToWrite))) >> (8 - bitsToWrite));
+                writeByte |= ((static_cast<unsigned char>(readByte) & ((~0) << (8 - bitsToWrite))) >> (8 - bitsToWrite));
                 j -= (bitsToWrite - 1);
                 ByteNode *newNode = new ByteNode(writeByte);
                 stack.push(newNode);
@@ -61,24 +61,28 @@ ByteNode* createHuffmanTree(std::ifstream &file) {
             }
         }
     }
-    return nullptr;
+    return std::make_pair(nullptr, -1);
 }
 
 ByteNode* createHuffmanTree(BitArray &bitArray) {
     std::stack<ByteNode*> stack;
-    char byte;
+    char writeByte;
+    unsigned char readByte;
     int bitsToWrite = 0;
     for (int i = 0; i < bitArray.index + 1; i++) {
+        readByte = bitArray.buffer[i];
         for (int j = 7; j >= 0; j--) {
             if (bitsToWrite == 0) {
-                if ((bitArray.buffer[i] & (1 << j)) != 0) {
+                if ((readByte & (1 << j)) != 0) {
+                    std::cout << '1';
                     bitsToWrite = 8;
                     if (j != 0) {
-                        byte |= ((bitArray.buffer[i] & (~((~0) << j))) << (8 - j));
+                        writeByte |= ((readByte & (~((~0) << j))) << (8 - j));
                         bitsToWrite -= j;
                     }
                     break;
                 } else {
+                    std::cout << '0';
                     if (stack.size() == 1) {
                         return stack.top();
                     } else {
@@ -93,11 +97,15 @@ ByteNode* createHuffmanTree(BitArray &bitArray) {
                     }
                 }
             } else {
-                byte |= ((bitArray.buffer[i] & ((~0) << (8 - bitsToWrite))) >> (8 - bitsToWrite));
+                //std::bitset<8> x(bitArray.buffer[i]);
+                //std::bitset<8> y(readByte);
+                //std::cout << "Buffer: " << x << " Read: " << y << '\n';
+                writeByte |= ((readByte & ((~0) << (8 - bitsToWrite))) >> (8 - bitsToWrite));
                 j -= (bitsToWrite - 1);
-                ByteNode *newNode = new ByteNode(byte);
+                std::cout << writeByte;
+                ByteNode *newNode = new ByteNode(writeByte);
                 stack.push(newNode);
-                byte = 0;
+                writeByte = 0;
                 bitsToWrite = 0;
             }
         }

@@ -44,6 +44,24 @@ string postTreeTraversalTable(ByteNode *node) {
     return tree;
 }
 
+// entry current starting-iterator bitArray
+void something(char entry, ByteNode* current, ByteNode* root, BitArray bitArray, ofstream &outputFile, int startingPos) {
+    for (int i = startingPos; i >= 0; i--) {
+        if ((entry & (1 << i)) != 0) {
+            current = current->right;
+        } else {
+            current = current->left;
+        }
+        if (current->byte != '\0') {
+            if (bitArray.writeByte(current->byte)) {
+                bitArray.writeOut(outputFile);
+                bitArray.clear();
+            }
+            current = root;
+        }
+    }
+}
+
 int usage(char filename[]) {
     cerr << filename << " Usage: \n-c <file> (file to compress)\n-d <file> (file to decompress)\n-o <output file>\n";
     return 1;
@@ -53,7 +71,7 @@ int main(int argc, char* argv[]) {
     int option;
     bool compress;
     string file;
-    string outFile;
+    string outputFileName;
     if (argc == 1) { return usage(argv[0]); }
     while ((option = getopt(argc, argv, "c:d:o:")) != -1) {
         switch (option) {
@@ -66,7 +84,7 @@ int main(int argc, char* argv[]) {
                 file = optarg;
                 break;
             case 'o':
-                outFile = optarg;
+                outputFileName = optarg;
                 break;
             default:
                 return usage(argv[0]);
@@ -78,9 +96,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (outFile == "") {
-        outFile = file + ".dat";
-        cout << "Output file: " << outFile << '\n';
+    if (outputFileName == "") {
+        outputFileName = file + ".dat";
     }
 
     ifstream inputFile(file, ios::binary);
@@ -89,12 +106,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    ofstream outputFile(outFile);
+    ofstream outputFile(outputFileName);
     BitArray bitArray;
     ByteNode* root;
 
     if (compress) {
-        cout << "Compressing " << file << '\n';
+        cout << "Compressing " << file << " into " << outputFileName << '\n';
 
         int fileSize = getFileSize(inputFile);
         unordered_map<char, int> byteFrequencies = propogateByteFrequencies(inputFile);
@@ -115,6 +132,8 @@ int main(int argc, char* argv[]) {
         encode(root, make_pair(0, 0), codes);
         writePostOrderTable(bitArray, root);
 
+        createHuffmanTree(bitArray);
+
         inputFile.clear();
         inputFile.seekg(0, ios::beg);
         char byte;
@@ -131,24 +150,30 @@ int main(int argc, char* argv[]) {
         // Write the rest of bitArray
         bitArray.index++;
         bitArray.writeOut(outputFile);
-        // bitArray.clear();        
+        bitArray.clear();        
     } else {
-        cout << "Decompressing " << file << '\n';
-
-        cout << inputFile.tellg() << '\n';
-
-        root = createHuffmanTree(inputFile);
-
-        char byte;
-        inputFile.get(byte);
-        bitset<8> x(byte);
-
-        cout << x << '\n';
-
-        cout << inputFile.tellg() << '\n';
-
-        ByteNode *current = root;
+        cout << "Decompressing " << file << " into " << outputFileName << '\n';
+        pair<ByteNode*, int> root = createHuffmanTree(inputFile);
+        inputFile.seekg(inputFile.tellg() - static_cast<std::streamoff>(1));
+        ByteNode *current = root.first;
         char entry;
+        inputFile.get(entry);
+
+        for (int i = root.second; i >= 0; i--) {
+            if ((entry & (1 << i)) != 0) {
+                current = current->right;
+            } else {
+                current = current->left;
+            }
+            if (current->byte != '\0') {
+                if (bitArray.writeByte(current->byte)) {
+                    bitArray.writeOut(outputFile);
+                    bitArray.clear();
+                }
+                current = root.first;
+            }
+        }
+        
         while (inputFile.get(entry)) {
             for (int i = 7; i >= 0; i--) {
                 if ((entry & (1 << i)) != 0) {
@@ -161,7 +186,7 @@ int main(int argc, char* argv[]) {
                         bitArray.writeOut(outputFile);
                         bitArray.clear();
                     }
-                    current = root;
+                    current = root.first;
                 }
             }
         }
