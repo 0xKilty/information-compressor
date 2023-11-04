@@ -105,18 +105,23 @@ int main(int argc, char* argv[]) {
             double symbolProbability = static_cast<double>(pair.second) / inputFileSize;
             entropy -= symbolProbability * log2(symbolProbability);
         }
-        cout << "Entropy: " << entropy << '\n';
+        cout << "Entropy:           " << entropy << '\n';
 
         root = buildHuffmanTree(orderedFrequencies);
 
         unordered_map<char, pair<int, int>> codes;
 
         encode(root, make_pair(0, 0), codes);
+        double averageCodeLength = 0;
+        for (const auto &pair : codes) {
+            averageCodeLength += (pair.second.second) / static_cast<double>(codes.size());
+        }
+        cout << "Avg. Code Length:  " << averageCodeLength << '\n';
         writePostOrderTable(bitArray, root);
 
         inputFile.clear();
         inputFile.seekg(0, ios::beg);
-
+        
         char byte;
         while (inputFile.get(byte)) {
             int codeLength = codes[byte].second;
