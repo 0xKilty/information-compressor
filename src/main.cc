@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <filesystem>
+#include <chrono>
 
 #include "bitarray.h"
 #include "huffman.h"
@@ -21,7 +22,7 @@ void writeOutClear(BitArray& bitArray, ofstream& outputFile) {
     bitArray.clear();
 }
 
-void huffmanTreeHop(bool goRight, ByteNode* &current) {
+void huffmanTreeTrav(bool goRight, ByteNode* &current) {
     if (goRight)
         current = current->right;
     else
@@ -30,7 +31,7 @@ void huffmanTreeHop(bool goRight, ByteNode* &current) {
 
 void byteTreeTraversalWrite(char entry, int startingPos, ByteNode* &current, ByteNode* root, BitArray &bitArray, ofstream& outputFile) {
     for (int i = startingPos; i >= 0; i--) {
-        huffmanTreeHop(((entry & (1 << i)) != 0), current);
+        huffmanTreeTrav(((entry & (1 << i)) != 0), current);
         if (current->byte != '\0') {
             if (bitArray.writeByte(current->byte)) {
                 writeOutClear(bitArray, outputFile);
@@ -48,7 +49,6 @@ int usage(char filename[]) {
 int main(int argc, char* argv[]) {
     int option;
     bool compress = true;
-    bool verbose = false;
     string inputFileName;
     string outputFileName;
 
@@ -65,25 +65,22 @@ int main(int argc, char* argv[]) {
             case 'o':
                 outputFileName = optarg;
                 break;
-            case 'v':
-                verbose = true;
-                break;
             default:
                 return usage(argv[0]);
         }
     }
 
     if (!filesystem::exists(inputFileName)) {
-        cerr << argv[0] << ": Error - " << inputFileName << " does not exist";
+        cerr << argv[0] << ": Error - " << inputFileName << " does not exist\n";
         return 1;
     }
 
-    if (outputFileName == "")
+    if (outputFileName.empty())
         outputFileName = inputFileName + ".dat";
 
     ifstream inputFile(inputFileName, ios::binary);
     if (!inputFile.is_open()) {
-        cerr << argv[0] << " Error - could not open " << inputFileName;
+        cerr << argv[0] << " Error - could not open " << inputFileName << '\n';
         return 1;
     }
 
@@ -91,10 +88,13 @@ int main(int argc, char* argv[]) {
     BitArray bitArray;
     ByteNode* root;
 
+    int inputFileSize = getFileSize(inputFile);
+
+    auto start_time = chrono::steady_clock::now();
+
     if (compress) {
         cout << "Compressing " << inputFileName << " into " << outputFileName << '\n';
 
-        int fileSize = getFileSize(inputFile);
         unordered_map<char, int> byteFrequencies = propogateByteFrequencies(inputFile);
         priority_queue<pair<ByteNode*, int>, vector<pair<ByteNode*, int>>, CompareByteNodes> orderedFrequencies;
 
@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
         for (const auto &pair : byteFrequencies) {
             std::pair<ByteNode*, int> byteFreq = make_pair(new ByteNode(pair.first), pair.second);
             orderedFrequencies.push(byteFreq);
-            double symbolProbability = static_cast<double>(pair.second) / fileSize;
+            double symbolProbability = static_cast<double>(pair.second) / inputFileSize;
             entropy -= symbolProbability * log2(symbolProbability);
         }
         cout << "Entropy: " << entropy << '\n';
@@ -129,24 +129,42 @@ int main(int argc, char* argv[]) {
     } else {
         cout << "Decompressing " << inputFileName << " into " << outputFileName << '\n';
 
-        pair<ByteNode*, int> root = createHuffmanTree(inputFile); // returns the top of the huffman tree and where it left off in the byte
+        ByteNode *root;
+        int startPos;
+        tie(root, startPos) = createHuffmanTree(inputFile);
+
+        ByteNode* current = root;
 
         inputFile.seekg(inputFile.tellg() - static_cast<std::streamoff>(1)); // go back one byte
 
-        ByteNode *current = root.first;
         char entry;
 
         inputFile.get(entry);
-        byteTreeTraversalWrite(entry, root.second, current, root.first, bitArray, outputFile);
+        byteTreeTraversalWrite(entry, startPos, current, root, bitArray, outputFile);
         
         while (inputFile.get(entry)) {
-            byteTreeTraversalWrite(entry, 7, current, root.first, bitArray, outputFile);
+            byteTreeTraversalWrite(entry, 7, current, root, bitArray, outputFile);
         }
     }
 
-    bitArray.writeOut(outputFile); // write out the rest of bitArray
+    bitArray.writeOut(outputFile);
+
+    auto end_time = std::chrono::steady_clock::now();
+    auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+
     inputFile.close();
     outputFile.close();
-    
+
+    inputFile.open(outputFileName);
+    int outputFileSize = getFileSize(inputFile);
+    inputFile.close();
+
+    int longestFileName = max(inputFileName.length(), outputFileName.length()) + 2;
+
+    cout << "Original:          " << left << setw(longestFileName) << inputFileName << ' ' << inputFileSize << " bytes\n";
+    cout << "New:               " << left << setw(longestFileName) << outputFileName << ' ' << outputFileSize << " bytes\n";
+    cout << "Percentage Change: " << ((outputFileSize - inputFileSize) * 100) / static_cast<double>(inputFileSize) << "%\n";
+    cout << "Time Elapsed:      " << elapsed_time.count() / 1000.0 << " ms\n";
+
     return 0;
 }
