@@ -35,7 +35,6 @@ bool BitArray::writeByte(uint8_t byte) {
 void BitArray::clear() {
     index = 0;
     capacity = 8;
-    for (auto& entry : buffer) {
+    for (auto& entry : buffer)
         entry = 0;
-    }
 }

@@ -1,21 +1,6 @@
-/* TODO
-
-Define a way to specify the bit mapping at the beginning of the file
-Allow users to specify input and output files with command line arguments
-Allow users to flag on verbose mode to display entropy and compression stats
-Commandline help message
-Turn the huffman encoding into a class in a seperate file
-
-*/
-
 #include <bits/stdc++.h>
-#include <bitset>
-#include <fstream>
 #include <iostream>
-#include <queue>
-#include <stack>
 #include <string>
-#include <unordered_map>
 #include <filesystem>
 
 #include "bitarray.h"
@@ -31,31 +16,24 @@ int getFileSize(ifstream &file) {
     return fileSize;
 }
 
-string postTreeTraversalTable(ByteNode *node) {
-    string tree;
-    if (node->byte == '\0') {
-        tree += postTreeTraversalTable(node->left);
-        tree += postTreeTraversalTable(node->right);
-        tree += '0';
-    } else {
-        tree += '1';
-        tree += node->byte;
-    }
-    return tree;
+void writeOutClear(BitArray& bitArray, ofstream& outputFile) {
+    bitArray.writeOut(outputFile);
+    bitArray.clear();
 }
 
-// entry current starting-iterator bitArray
-void something(char entry, ByteNode* current, ByteNode* root, BitArray bitArray, ofstream &outputFile, int startingPos) {
+void huffmanTreeHop(bool goRight, ByteNode* &current) {
+    if (goRight)
+        current = current->right;
+    else
+        current = current->left;
+}
+
+void byteTreeTraversalWrite(char entry, int startingPos, ByteNode* &current, ByteNode* root, BitArray &bitArray, ofstream& outputFile) {
     for (int i = startingPos; i >= 0; i--) {
-        if ((entry & (1 << i)) != 0) {
-            current = current->right;
-        } else {
-            current = current->left;
-        }
+        huffmanTreeHop(((entry & (1 << i)) != 0), current);
         if (current->byte != '\0') {
             if (bitArray.writeByte(current->byte)) {
-                bitArray.writeOut(outputFile);
-                bitArray.clear();
+                writeOutClear(bitArray, outputFile);
             }
             current = root;
         }
@@ -69,40 +47,43 @@ int usage(char filename[]) {
 
 int main(int argc, char* argv[]) {
     int option;
-    bool compress;
-    string file;
+    bool compress = true;
+    bool verbose = false;
+    string inputFileName;
     string outputFileName;
-    if (argc == 1) { return usage(argv[0]); }
+
+    if (argc == 1) 
+        return usage(argv[0]);
+
     while ((option = getopt(argc, argv, "c:d:o:")) != -1) {
         switch (option) {
-            case 'c':
-                compress = true;
-                file = optarg;
-                break;
             case 'd':
                 compress = false;
-                file = optarg;
+            case 'c':
+                inputFileName = optarg;
                 break;
             case 'o':
                 outputFileName = optarg;
+                break;
+            case 'v':
+                verbose = true;
                 break;
             default:
                 return usage(argv[0]);
         }
     }
 
-    if (!filesystem::exists(file)) {
-        cerr << argv[0] << ": Error - " << file << " does not exist";
+    if (!filesystem::exists(inputFileName)) {
+        cerr << argv[0] << ": Error - " << inputFileName << " does not exist";
         return 1;
     }
 
-    if (outputFileName == "") {
-        outputFileName = file + ".dat";
-    }
+    if (outputFileName == "")
+        outputFileName = inputFileName + ".dat";
 
-    ifstream inputFile(file, ios::binary);
+    ifstream inputFile(inputFileName, ios::binary);
     if (!inputFile.is_open()) {
-        cerr << argv[0] << " Error - could not open " << file;
+        cerr << argv[0] << " Error - could not open " << inputFileName;
         return 1;
     }
 
@@ -111,11 +92,11 @@ int main(int argc, char* argv[]) {
     ByteNode* root;
 
     if (compress) {
-        cout << "Compressing " << file << " into " << outputFileName << '\n';
+        cout << "Compressing " << inputFileName << " into " << outputFileName << '\n';
 
         int fileSize = getFileSize(inputFile);
         unordered_map<char, int> byteFrequencies = propogateByteFrequencies(inputFile);
-        priority_queue<std::pair<ByteNode*, int>, vector<std::pair<ByteNode*, int>>, CompareByteNodes> orderedFrequencies;
+        priority_queue<pair<ByteNode*, int>, vector<pair<ByteNode*, int>>, CompareByteNodes> orderedFrequencies;
 
         double entropy = 0;
         for (const auto &pair : byteFrequencies) {
@@ -129,72 +110,41 @@ int main(int argc, char* argv[]) {
         root = buildHuffmanTree(orderedFrequencies);
 
         unordered_map<char, pair<int, int>> codes;
+
         encode(root, make_pair(0, 0), codes);
         writePostOrderTable(bitArray, root);
 
-        createHuffmanTree(bitArray);
-
         inputFile.clear();
         inputFile.seekg(0, ios::beg);
-        char byte;
 
+        char byte;
         while (inputFile.get(byte)) {
             int codeLength = codes[byte].second;
             int code = codes[byte].first;
-            while (bitArray.writeBits(code, codeLength) != 0) {
-                bitArray.writeOut(outputFile);
-                bitArray.clear();
-            }
+            while (bitArray.writeBits(code, codeLength) != 0)
+                writeOutClear(bitArray, outputFile);
         }
 
-        // Write the rest of bitArray
-        bitArray.index++;
-        bitArray.writeOut(outputFile);
-        bitArray.clear();        
+        bitArray.index++;        
     } else {
-        cout << "Decompressing " << file << " into " << outputFileName << '\n';
-        pair<ByteNode*, int> root = createHuffmanTree(inputFile);
-        inputFile.seekg(inputFile.tellg() - static_cast<std::streamoff>(1));
+        cout << "Decompressing " << inputFileName << " into " << outputFileName << '\n';
+
+        pair<ByteNode*, int> root = createHuffmanTree(inputFile); // returns the top of the huffman tree and where it left off in the byte
+
+        inputFile.seekg(inputFile.tellg() - static_cast<std::streamoff>(1)); // go back one byte
+
         ByteNode *current = root.first;
         char entry;
-        inputFile.get(entry);
 
-        for (int i = root.second; i >= 0; i--) {
-            if ((entry & (1 << i)) != 0) {
-                current = current->right;
-            } else {
-                current = current->left;
-            }
-            if (current->byte != '\0') {
-                if (bitArray.writeByte(current->byte)) {
-                    bitArray.writeOut(outputFile);
-                    bitArray.clear();
-                }
-                current = root.first;
-            }
-        }
+        inputFile.get(entry);
+        byteTreeTraversalWrite(entry, root.second, current, root.first, bitArray, outputFile);
         
         while (inputFile.get(entry)) {
-            for (int i = 7; i >= 0; i--) {
-                if ((entry & (1 << i)) != 0) {
-                    current = current->right;
-                } else {
-                    current = current->left;
-                }
-                if (current->byte != '\0') {
-                    if (bitArray.writeByte(current->byte)) {
-                        bitArray.writeOut(outputFile);
-                        bitArray.clear();
-                    }
-                    current = root.first;
-                }
-            }
+            byteTreeTraversalWrite(entry, 7, current, root.first, bitArray, outputFile);
         }
-
-        // Write the rest of writeBits
-        bitArray.writeOut(outputFile);
     }
 
+    bitArray.writeOut(outputFile); // write out the rest of bitArray
     inputFile.close();
     outputFile.close();
     

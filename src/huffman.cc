@@ -6,10 +6,12 @@ bool CompareByteNodes::operator()(std::pair<ByteNode*, int> left, std::pair<Byte
 
 ByteNode* buildHuffmanTree(std::priority_queue<std::pair<ByteNode*, int>, std::vector<std::pair<ByteNode*, int>>, CompareByteNodes> &priorityQueue) {
     while (priorityQueue.size() > 1) {
+        
         std::pair<ByteNode*, int> left = priorityQueue.top();
         priorityQueue.pop();
         std::pair<ByteNode*, int> right = priorityQueue.top();
         priorityQueue.pop();
+
         ByteNode *newNode = new ByteNode('\0');
         newNode->left = left.first;
         newNode->right = right.first;
