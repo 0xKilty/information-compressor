@@ -4,7 +4,7 @@
 ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/0xKilty/information-compressor/main)
 
 ### Metrics
-Using the `loremBig` file
+Using the `lorem` file
 ```bash
 $ information-compressor -c ./data/lorem
 Compressing ./data/lorem into ./data/lorem.dat
