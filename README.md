@@ -1,5 +1,5 @@
 # information-compressor
-> A file compressor using [Huffman Coding](Huffman_coding)
+> A file compressor using [Huffman Coding]([Huffman_coding](https://en.wikipedia.org/wiki/Huffman_coding))
 
 ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/0xKilty/information-compressor/main)
 
