@@ -1,18 +1,24 @@
 #include <bits/stdc++.h>
+
+#include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <string>
-#include <filesystem>
-#include <chrono>
 
 #include "bitarray.h"
-#include "huffman.h"
 #include "encoding.h"
+#include "huffman.h"
+
+/*
+TODO
+
+*/
 
 using namespace std;
 
-int getFileSize(ifstream &file) {
+uint32_t getFileSize(ifstream& file) {
     file.seekg(0, ios::end);
-    int fileSize = file.tellg();
+    uint32_t fileSize = file.tellg();
     file.seekg(0, ios::beg);
     return fileSize;
 }
@@ -22,23 +28,39 @@ void writeOutClear(BitArray& bitArray, ofstream& outputFile) {
     bitArray.clear();
 }
 
-void huffmanTreeTrav(bool goRight, ByteNode* &current) {
+void huffmanTreeTrav(bool goRight, ByteNode*& current) {
     if (goRight)
         current = current->right;
     else
         current = current->left;
 }
 
-void byteTreeTraversalWrite(char entry, int startingPos, ByteNode* &current, ByteNode* root, BitArray &bitArray, ofstream& outputFile) {
+void byteTreeTraversalWrite(char entry, int startingPos, ByteNode*& current, ByteNode* root, BitArray& bitArray, ofstream& outputFile, int& originalSize) {
     for (int i = startingPos; i >= 0; i--) {
         huffmanTreeTrav(((entry & (1 << i)) != 0), current);
         if (current->byte != '\0') {
             if (bitArray.writeByte(current->byte)) {
                 writeOutClear(bitArray, outputFile);
             }
+            originalSize--;
+            if (originalSize == 0) {
+                break;
+            }
             current = root;
         }
     }
+}
+
+int getOriginalSize(ifstream &inputFile) {
+    unsigned char unchar;
+    char entry;
+    int originalSize = 0;
+    for (int i = 0; i < 4; i++) {
+        inputFile.get(entry);
+        unchar = static_cast<unsigned char>(entry);
+        originalSize |= ((unchar) << (8 * i));
+    }
+    return originalSize;
 }
 
 int usage(char filename[]) {
@@ -52,7 +74,7 @@ int main(int argc, char* argv[]) {
     string inputFileName;
     string outputFileName;
 
-    if (argc == 1) 
+    if (argc == 1)
         return usage(argv[0]);
 
     while ((option = getopt(argc, argv, "c:d:o:")) != -1) {
@@ -88,7 +110,7 @@ int main(int argc, char* argv[]) {
     BitArray bitArray;
     ByteNode* root;
 
-    int inputFileSize = getFileSize(inputFile);
+    uint32_t inputFileSize = getFileSize(inputFile);
 
     auto start_time = chrono::steady_clock::now();
 
@@ -99,7 +121,7 @@ int main(int argc, char* argv[]) {
         priority_queue<pair<ByteNode*, int>, vector<pair<ByteNode*, int>>, CompareByteNodes> orderedFrequencies;
 
         double entropy = 0;
-        for (const auto &pair : byteFrequencies) {
+        for (const auto& pair : byteFrequencies) {
             std::pair<ByteNode*, int> byteFreq = make_pair(new ByteNode(pair.first), pair.second);
             orderedFrequencies.push(byteFreq);
             double symbolProbability = static_cast<double>(pair.second) / inputFileSize;
@@ -113,7 +135,7 @@ int main(int argc, char* argv[]) {
 
         encode(root, make_pair(0, 0), codes);
         double averageCodeLength = 0;
-        for (const auto &pair : codes) {
+        for (const auto& pair : codes) {
             averageCodeLength += (pair.second.second) / static_cast<double>(codes.size());
         }
         cout << "Avg. Code Length:  " << averageCodeLength << '\n';
@@ -121,7 +143,10 @@ int main(int argc, char* argv[]) {
 
         inputFile.clear();
         inputFile.seekg(0, ios::beg);
-        
+
+        // Write the original size of the file
+        outputFile.write(reinterpret_cast<const char*>(&inputFileSize), 4);
+
         char byte;
         while (inputFile.get(byte)) {
             int codeLength = codes[byte].second;
@@ -130,25 +155,27 @@ int main(int argc, char* argv[]) {
                 writeOutClear(bitArray, outputFile);
         }
 
-        bitArray.index++;        
+        bitArray.index++;
     } else {
         cout << "Decompressing " << inputFileName << " into " << outputFileName << '\n';
+        char entry;
 
-        ByteNode *root;
+        int originalSize = getOriginalSize(inputFile);
+
+        ByteNode* root;
         int startPos;
         tie(root, startPos) = createHuffmanTree(inputFile);
 
         ByteNode* current = root;
 
-        inputFile.seekg(inputFile.tellg() - static_cast<std::streamoff>(1)); // go back one byte
-
-        char entry;
+        inputFile.seekg(inputFile.tellg() - static_cast<std::streamoff>(1));  // go back one byte
 
         inputFile.get(entry);
-        byteTreeTraversalWrite(entry, startPos, current, root, bitArray, outputFile);
-        
-        while (inputFile.get(entry)) {
-            byteTreeTraversalWrite(entry, 7, current, root, bitArray, outputFile);
+        byteTreeTraversalWrite(entry, startPos, current, root, bitArray, outputFile, originalSize);
+
+        while (originalSize > 0) {
+            inputFile.get(entry);
+            byteTreeTraversalWrite(entry, 7, current, root, bitArray, outputFile, originalSize);
         }
     }
 
